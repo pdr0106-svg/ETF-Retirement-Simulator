@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>ETF 은퇴 시뮬레이터</title>
+    <style>
+        /* --- 아이폰 최적화 스타일 --- */
+        :root { --safe-bottom: env(safe-area-inset-bottom, 20px); }
+        body { 
+            font-family: -apple-system, system-ui, sans-serif; 
+            background-color: #f8fafc; margin: 0; 
+            height: 100vh; height: 100dvh; 
+            display: flex; flex-direction: column; overflow: hidden;
+        }
+        /* 헤더 */
+        header { flex-shrink: 0; background: white; padding: max(20px, env(safe-area-inset-top)) 20px 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); z-index: 10; }
+        h1 { font-size: 20px; margin: 0; font-weight: 800; color: #1e293b; }
+        .sub-title { font-size: 12px; color: #64748b; margin-top: 4px; }
+        
+        /* 메인 컨텐츠 */
+        main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px; padding-bottom: 20px; }
+        
+        /* 하단 탭바 */
+        nav { flex-shrink: 0; background: white; border-top: 1px solid #e2e8f0; padding-bottom: var(--safe-bottom); display: flex; justify-content: space-around; height: 60px; z-index: 50; }
+        .tab-btn { flex: 1; border: none; background: none; font-size: 11px; font-weight: 600; color: #94a3b8; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+        .tab-btn.active { color: #2563eb; }
+        .tab-icon { font-size: 20px; }
+        
+        /* 카드 UI */
+        .card { background: white; border-radius: 20px; padding: 20px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+        .hero-card { background: linear-gradient(135deg, #2563eb, #4f46e5); color: white; }
+        .label { font-size: 13px; font-weight: 600; color: #64748b; display: block; margin-bottom: 5px; }
+        .value-lg { font-size: 32px; font-weight: 800; margin: 10px 0; }
+        
+        /* 입력 폼 */
+        .input-group { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px; }
+        .input-group:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        input[type="number"] { width: 100px; text-align: right; border: none; font-size: 16px; font-weight: 700; color: #1e293b; outline: none; background: transparent; }
+        
+        /* 차트 영역 */
+        .chart-container { height: 220px; width: 100%; margin-left: -10px; }
+        
+        /* 테이블 (가로 스크롤) */
+        .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: -20px; padding: 20px; }
+        table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: right; white-space: nowrap; }
+        th { text-align: right; color: #64748b; font-weight: 600; padding: 10px 8px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; position: sticky; top: 0; z-index: 5; }
+        th:first-child { text-align: left; position: sticky; left: 0; z-index: 6; }
+        td { padding: 12px 8px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+        td:first-child { text-align: left; font-weight: 700; color: #64748b; position: sticky; left: 0; background: white; z-index: 5; border-right: 1px solid #f1f5f9; }
+        
+        /* 유틸리티 */
+        .text-blue { color: #2563eb; }
+        .text-purple { color: #9333ea; }
+        .text-gray { color: #64748b; }
+        .screen { display: none; }
+        .screen.active { display: block; }
+    </style>
+    
+    <!-- 라이브러리 로드 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+    <div id="root" class="h-full flex flex-col"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo } = React;
+        const { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = window.Recharts || {};
+
+        // --- 아이콘 컴포넌트 ---
+        const Icons = {
+            Chart: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>,
+            Table: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>,
+            Settings: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+        };
+
+        const App = () => {
+            const [activeTab, setActiveTab] = useState('dashboard');
+
+            // --- 설정 State (ETF) ---
+            const [startYear, setStartYear] = useState(2026);
+            const [targetYear, setTargetYear] = useState(2057);
+
+            // VOO (Core)
+            const [vooInitial, setVooInitial] = useState(184.12);
+            const [vooMonthly, setVooMonthly] = useState(140);
+            const [vooIncrease, setVooIncrease] = useState(35);
+            const [vooRate, setVooRate] = useState(7.0);
+
+            // QQQM (Booster)
+            const [qqqmInitial, setQqqmInitial] = useState(0);
+            const [qqqmMonthly, setQqqmMonthly] = useState(60);
+            const [qqqmIncrease, setQqqmIncrease] = useState(15);
+            const [qqqmRate, setQqqmRate] = useState(9.0);
+
+            // VTI (Holding)
+            const [vtiInitial, setVtiInitial] = useState(176.22);
+            const [vtiRate, setVtiRate] = useState(7.0);
+
+            // --- 시뮬레이션 로직 ---
+            const simulationData = useMemo(() => {
+                let data = [];
+                const months = (targetYear - startYear) * 12;
+                
+                let curVoo = vooInitial;
+                let curQqqm = qqqmInitial;
+                let curVti = vtiInitial;
+                let prinTotal = vooInitial + qqqmInitial + vtiInitial;
+
+                // Monthly Rates
+                const rVoo = (vooRate / 100) / 12;
+                const rQqqm = (qqqmRate / 100) / 12;
+                const rVti = (vtiRate / 100) / 12;
+
+                // 시작 데이터
+                data.push({
+                    year: startYear,
+                    voo: Math.round(curVoo),
+                    qqqm: Math.round(curQqqm),
+                    vti: Math.round(curVti),
+                    total: Math.round(curVoo + curQqqm + curVti)
+                });
+
+                for (let m = 1; m <= months; m++) {
+                    const yearIdx = Math.floor((m - 1) / 12);
+                    
+                    // Monthly Contribution with Step-up
+                    const cVoo = vooMonthly + (yearIdx * vooIncrease);
+                    const cQqqm = qqqmMonthly + (yearIdx * qqqmIncrease);
+                    
+                    // Interest + Contribution
+                    curVoo = (curVoo * (1 + rVoo)) + cVoo;
+                    curQqqm = (curQqqm * (1 + rQqqm)) + cQqqm;
+                    curVti = curVti * (1 + rVti); // No contribution
+
+                    prinTotal += cVoo + cQqqm;
+
+                    // 매년 12월 데이터 저장
+                    if (m % 12 === 0) {
+                        data.push({
+                            year: startYear + yearIdx + 1,
+                            voo: Math.round(curVoo),
+                            qqqm: Math.round(curQqqm),
+                            vti: Math.round(curVti),
+                            total: Math.round(curVoo + curQqqm + curVti),
+                            principal: Math.round(prinTotal)
+                        });
+                    }
+                }
+                return data;
+            }, [startYear, targetYear, vooInitial, vooMonthly, vooIncrease, vooRate, qqqmInitial, qqqmMonthly, qqqmIncrease, qqqmRate, vtiInitial, vtiRate]);
+
+            const finalData = simulationData[simulationData.length - 1] || {};
+            const formatMoney = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val);
+
+            // Input Component
+            const InputRow = ({ label, val, set, type="number", sub }) => (
+                <div className="input-group">
+                    <div>
+                        <span className="text-sm font-semibold text-slate-600">{label}</span>
+                        {sub && <p className="text-[10px] text-slate-400">{sub}</p>}
+                    </div>
+                    <input type={type} value={val} onChange={e => set(Number(e.target.value))} />
+                </div>
+            );
+
+            return (
+                <>
+                    <header>
+                        <div className="flex justify-between items-end">
+                            <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">ETF Portfolio</p>
+                                <h1 className="text-xl font-bold text-slate-800">
+                                    {activeTab === 'dashboard' ? 'ETF 시뮬레이션' : activeTab === 'detail' ? '연도별 상세표' : '설정 수정'}
+                                </h1>
+                            </div>
+                            <div className="text-right">
+                                <span className="block text-[10px] text-slate-400">목표 기간</span>
+                                <span className="block text-sm font-bold text-blue-600">{startYear} ~ {targetYear}</span>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main>
+                        {/* 1. DASHBOARD TAB */}
+                        {activeTab === 'dashboard' && (
+                            <div className="animate-fade-in">
+                                {/* Hero Card */}
+                                <div className="card hero-card">
+                                    <p className="text-blue-200 text-xs font-medium mb-1">예상 은퇴 자산 ({targetYear}년)</p>
+                                    <h2 className="text-4xl font-bold tracking-tight mb-6">{formatMoney(finalData.total || 0)}</h2>
+                                    
+                                    <div className="grid grid-cols-3 gap-2 border-t border-white/10 pt-4">
+                                        <div><p className="text-[10px] text-blue-200 mb-0.5">VOO</p><p className="font-bold text-sm">{formatMoney(finalData.voo)}</p></div>
+                                        <div><p className="text-[10px] text-purple-200 mb-0.5">QQQM</p><p className="font-bold text-sm text-purple-100">{formatMoney(finalData.qqqm)}</p></div>
+                                        <div><p className="text-[10px] text-slate-300 mb-0.5">VTI</p><p className="font-bold text-sm text-slate-200">{formatMoney(finalData.vti)}</p></div>
+                                    </div>
+                                </div>
+
+                                {/* Chart */}
+                                <div className="card">
+                                    <div className="label mb-2">자산 성장 그래프</div>
+                                    <div className="chart-container">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <AreaChart data={simulationData}>
+                                                <defs>
+                                                    <linearGradient id="gVoo" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#2563eb" stopOpacity={0.8}/><stop offset="95%" stopColor="#2563eb" stopOpacity={0.1}/></linearGradient>
+                                                    <linearGradient id="gQqqm" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#9333ea" stopOpacity={0.8}/><stop offset="95%" stopColor="#9333ea" stopOpacity={0.1}/></linearGradient>
+                                                    <linearGradient id="gVti" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#64748b" stopOpacity={0.8}/><stop offset="95%" stopColor="#64748b" stopOpacity={0.1}/></linearGradient>
+                                                </defs>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
+                                                <XAxis dataKey="year" tick={{fontSize: 10}} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                                                <YAxis tickFormatter={v => `${v/1000}k`} tick={{fontSize: 10}} axisLine={false} tickLine={false} width={30}/>
+                                                <Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 8px 16px rgba(0,0,0,0.1)'}} formatter={v => formatMoney(v)} />
+                                                <Area type="monotone" dataKey="vti" stackId="1" stroke="#64748b" fill="url(#gVti)" />
+                                                <Area type="monotone" dataKey="voo" stackId="1" stroke="#2563eb" fill="url(#gVoo)" />
+                                                <Area type="monotone" dataKey="qqqm" stackId="1" stroke="#9333ea" fill="url(#gQqqm)" />
+                                            </AreaChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+
+                                {/* Stats */}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="card">
+                                        <p className="text-xs text-slate-400 mb-1">총 투자 원금</p>
+                                        <p className="text-lg font-bold text-slate-600">{formatMoney(finalData.principal)}</p>
+                                    </div>
+                                    <div className="card">
+                                        <p className="text-xs text-slate-400 mb-1">순수 투자 수익</p>
+                                        <p className="text-lg font-bold text-green-600">+{formatMoney((finalData.total || 0) - (finalData.principal || 0))}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 2. DETAIL (Table) */}
+                        {activeTab === 'detail' && (
+                            <div className="card" style={{padding: 0, overflow: 'hidden'}}>
+                                <div className="table-wrapper">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>연도</th>
+                                                <th className="text-blue">VOO</th>
+                                                <th className="text-purple">QQQM</th>
+                                                <th className="text-gray">VTI</th>
+                                                <th>Total</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {simulationData.map((row) => (
+                                                <tr key={row.year}>
+                                                    <td>{row.year}</td>
+                                                    <td className="text-blue">{formatMoney(row.voo)}</td>
+                                                    <td className="text-purple">{formatMoney(row.qqqm)}</td>
+                                                    <td className="text-gray">{formatMoney(row.vti)}</td>
+                                                    <td style={{fontWeight:'bold'}}>{formatMoney(row.total)}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div className="p-4 text-center border-t border-slate-100">
+                                    <p className="text-[10px] text-slate-400">표를 좌우로 밀어서 상세 내역을 확인하세요</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 3. SETTINGS */}
+                        {activeTab === 'settings' && (
+                            <div className="pb-20">
+                                <div className="card">
+                                    <div className="label mb-3">기간 설정</div>
+                                    <InputRow label="시작 연도" val={startYear} set={setStartYear} />
+                                    <InputRow label="목표 연도" val={targetYear} set={setTargetYear} />
+                                </div>
+
+                                <div className="card" style={{borderLeft: '4px solid #2563eb'}}>
+                                    <div className="label mb-3 text-blue">🛡️ VOO (Core)</div>
+                                    <InputRow label="초기 투자금" val={vooInitial} set={setVooInitial} />
+                                    <InputRow label="월 적립금" val={vooMonthly} set={setVooMonthly} />
+                                    <InputRow label="매년 증액분" val={vooIncrease} set={setVooIncrease} />
+                                    <InputRow label="수익률 (%)" val={vooRate} set={setVooRate} sub="실질 수익률 (7% 권장)" />
+                                </div>
+
+                                <div className="card" style={{borderLeft: '4px solid #9333ea'}}>
+                                    <div className="label mb-3 text-purple">🚀 QQQM (Booster)</div>
+                                    <InputRow label="초기 투자금" val={qqqmInitial} set={setQqqmInitial} />
+                                    <InputRow label="월 적립금" val={qqqmMonthly} set={setQqqmMonthly} />
+                                    <InputRow label="매년 증액분" val={qqqmIncrease} set={setQqqmIncrease} />
+                                    <InputRow label="수익률 (%)" val={qqqmRate} set={setQqqmRate} sub="실질 수익률 (9% 권장)" />
+                                </div>
+
+                                <div className="card" style={{borderLeft: '4px solid #64748b'}}>
+                                    <div className="label mb-3 text-gray">🔒 VTI (Holding)</div>
+                                    <InputRow label="보유 잔액" val={vtiInitial} set={setVtiInitial} />
+                                    <InputRow label="수익률 (%)" val={vtiRate} set={setVtiRate} sub="추가 불입 없음" />
+                                </div>
+                            </div>
+                        )}
+                    </main>
+
+                    <nav>
+                        <button className={`tab-btn ${activeTab==='dashboard'?'active':''}`} onClick={()=>setActiveTab('dashboard')}><span className="tab-icon">📊</span>차트</button>
+                        <button className={`tab-btn ${activeTab==='detail'?'active':''}`} onClick={()=>setActiveTab('detail')}><span className="tab-icon">📝</span>상세표</button>
+                        <button className={`tab-btn ${activeTab==='settings'?'active':''}`} onClick={()=>setActiveTab('settings')}><span className="tab-icon">⚙️</span>설정</button>
+                    </nav>
+                </>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
+
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>ETF 은퇴 시뮬레이터</title>
+    
+    <!-- 아이콘 (ETF 관련) -->
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2953/2953363.png">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <style>
+        /* --- 아이폰 전용 스타일 --- */
+        :root { --safe-bottom: env(safe-area-inset-bottom, 20px); }
+        body { 
+            font-family: -apple-system, system-ui, sans-serif; 
+            background-color: #f8fafc; margin: 0; 
+            height: 100vh; height: 100dvh; 
+            display: flex; flex-direction: column; overflow: hidden;
+        }
+        /* 헤더 */
+        header { flex-shrink: 0; background: white; padding: max(20px, env(safe-area-inset-top)) 20px 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); z-index: 10; }
+        h1 { font-size: 20px; margin: 0; font-weight: 800; color: #1e293b; }
+        .sub-title { font-size: 12px; color: #64748b; margin-top: 4px; }
+        
+        /* 메인 */
+        main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px; padding-bottom: 20px; }
+        
+        /* 탭바 */
+        nav { flex-shrink: 0; background: white; border-top: 1px solid #e2e8f0; padding-bottom: var(--safe-bottom); display: flex; justify-content: space-around; height: 60px; z-index: 50; }
+        .tab-btn { flex: 1; border: none; background: none; font-size: 11px; font-weight: 600; color: #94a3b8; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+        .tab-btn.active { color: #2563eb; }
+        .tab-icon { font-size: 20px; }
+        
+        /* 카드 */
+        .card { background: white; border-radius: 20px; padding: 20px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+        .hero-card { background: linear-gradient(135deg, #2563eb, #4f46e5); color: white; }
+        .label { font-size: 13px; font-weight: 600; color: #64748b; display: block; margin-bottom: 5px; }
+        .value-lg { font-size: 32px; font-weight: 800; margin: 10px 0; }
+        .badge { background: rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 6px; font-size: 11px; }
+        
+        /* 입력폼 */
+        .input-group { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #f1f5f9; padding-bottom: 10px; }
+        .input-group:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        input[type="number"] { width: 100px; text-align: right; border: none; font-size: 18px; font-weight: 700; color: #4f46e5; outline: none; background: transparent; }
+        
+        /* 차트 */
+        .chart-container { height: 200px; display: flex; align-items: flex-end; gap: 2px; padding-top: 20px; }
+        .bar { flex: 1; background: #cbd5e1; border-radius: 2px 2px 0 0; position: relative; transition: height 0.3s; }
+        .bar.active { background: #4f46e5; }
+        
+        /* 테이블 (가로 스크롤 적용) */
+        .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: -20px; padding: 20px; }
+        table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: right; white-space: nowrap; }
+        th { position: sticky; top: 0; background: #f8fafc; color: #64748b; font-weight: 600; padding: 10px 8px; border-bottom: 1px solid #e2e8f0; z-index: 5; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; }
+        
+        td { padding: 12px 8px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+        .td-freeze { color: #3b82f6; font-weight: bold; }
+        .screen { display: none; }
+        .screen.active { display: block; }
+        
+        /* 스크롤바 숨기기 (깔끔하게) */
+        .table-wrapper::-webkit-scrollbar { display: none; }
+        .table-wrapper { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>ETF 포트폴리오</h1>
+        <div class="sub-title">VOO • QQQM • VTI 시뮬레이션</div>
+    </header>
+
+    <main>
+        <!-- 1. 대시보드 -->
+        <div id="dashboard" class="screen active">
+            <div class="card hero-card">
+                <div style="display:flex; justify-content:space-between;">
+                    <span style="opacity:0.8; font-size:12px">예상 총 자산</span>
+                    <span class="badge" id="targetYearBadge">2057년</span>
+                </div>
+                <div class="value-lg" id="totalAssetDisplay">$0</div>
+                
+                <div style="display:flex; gap:10px; font-size:11px; opacity:0.9; margin-top:15px; border-top:1px solid rgba(255,255,255,0.2); padding-top:10px;">
+                    <div style="flex:1"><div>원금</div><div style="font-weight:700; font-size:14px" id="totalPrincipalDisplay">$0</div></div>
+                    <div style="flex:1"><div>수익</div><div style="font-weight:700; font-size:14px; color:#86efac" id="totalInterestDisplay">+$0</div></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="label">자산 성장 그래프</div>
+                <div class="chart-container" id="chartArea"></div>
+                <div style="text-align:center; font-size:10px; color:#94a3b8; margin-top:10px;">시작 → 목표 연도</div>
+            </div>
+
+            <div class="card">
+                <div class="label">최종 자산 구성</div>
+                <div class="input-group"><span>VOO (Core)</span><span style="font-weight:700; color:#2563eb" id="finalVoo">$0</span></div>
+                <div class="input-group"><span>QQQM (Booster)</span><span style="font-weight:700; color:#9333ea" id="finalQqqm">$0</span></div>
+                <div class="input-group"><span>VTI (Holding)</span><span style="font-weight:700; color:#64748b" id="finalVti">$0</span></div>
+            </div>
+        </div>
+
+        <!-- 2. 상세표 (가로 스크롤 적용됨) -->
+        <div id="detail" class="screen">
+            <div class="card" style="padding:0; overflow:hidden;">
+                <div class="table-wrapper">
+                    <table id="detailTable">
+                        <thead>
+                            <tr>
+                                <th style="text-align:left; padding-left:15px; min-width:40px;">연도</th>
+                                <th style="min-width:80px; color:#2563eb;">VOO</th>
+                                <th style="min-width:80px; color:#9333ea;">QQQM</th>
+                                <th style="min-width:80px; color:#64748b;">VTI</th>
+                                <th style="padding-right:15px; min-width:90px; color:#1e293b;">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+            <div style="text-align:center; font-size:11px; color:#94a3b8; margin-top:10px;">
+                * 표를 좌우로 밀어서 상세 내역을 확인하세요.
+            </div>
+        </div>
+
+        <!-- 3. 설정 -->
+        <div id="settings" class="screen">
+            <div class="card">
+                <div class="label">목표 설정</div>
+                <div class="input-group"><label>시작 연도</label><input type="number" id="inputStartYear" value="2026" oninput="runSimulation()"></div>
+                <div class="input-group"><label>목표 연도</label><input type="number" id="inputTargetYear" value="2057" oninput="runSimulation()"></div>
+            </div>
+
+            <div class="card" style="border-left: 4px solid #2563eb;">
+                <div class="label" style="color:#2563eb">VOO (Core)</div>
+                <div class="input-group"><label>초기 투자금</label><input type="number" id="inputVooInit" value="184.12" oninput="runSimulation()"></div>
+                <div class="input-group"><label>월 적립금</label><input type="number" id="inputVooMonthly" value="140" oninput="runSimulation()"></div>
+                <div class="input-group"><label>매년 증액</label><input type="number" id="inputVooInc" value="35" oninput="runSimulation()"></div>
+                <div class="input-group"><label>수익률 (%)</label><input type="number" id="inputVooRate" value="7.0" oninput="runSimulation()"></div>
+            </div>
+
+            <div class="card" style="border-left: 4px solid #9333ea;">
+                <div class="label" style="color:#9333ea">QQQM (Booster)</div>
+                <div class="input-group"><label>초기 투자금</label><input type="number" id="inputQqqmInit" value="0" oninput="runSimulation()"></div>
+                <div class="input-group"><label>월 적립금</label><input type="number" id="inputQqqmMonthly" value="60" oninput="runSimulation()"></div>
+                <div class="input-group"><label>매년 증액</label><input type="number" id="inputQqqmInc" value="15" oninput="runSimulation()"></div>
+                <div class="input-group"><label>수익률 (%)</label><input type="number" id="inputQqqmRate" value="9.0" oninput="runSimulation()"></div>
+            </div>
+
+            <div class="card" style="border-left: 4px solid #64748b;">
+                <div class="label" style="color:#64748b">VTI (Holding)</div>
+                <div class="input-group"><label>보유 잔액</label><input type="number" id="inputVtiInit" value="176.22" oninput="runSimulation()"></div>
+                <div class="input-group"><label>수익률 (%)</label><input type="number" id="inputVtiRate" value="7.0" oninput="runSimulation()"></div>
+            </div>
+        </div>
+    </main>
+
+    <nav>
+        <button class="tab-btn active" onclick="switchTab('dashboard', this)"><span class="tab-icon">📊</span>차트</button>
+        <button class="tab-btn" onclick="switchTab('detail', this)"><span class="tab-icon">📝</span>상세표</button>
+        <button class="tab-btn" onclick="switchTab('settings', this)"><span class="tab-icon">⚙️</span>설정</button>
+    </nav>
+
+    <script>
+        function runSimulation() {
+            // 입력값
+            const startYear = parseInt(document.getElementById('inputStartYear').value);
+            const targetYear = parseInt(document.getElementById('inputTargetYear').value);
+
+            // VOO
+            const vooInit = parseFloat(document.getElementById('inputVooInit').value);
+            const vooMonthly = parseFloat(document.getElementById('inputVooMonthly').value);
+            const vooInc = parseFloat(document.getElementById('inputVooInc').value);
+            const vooRate = parseFloat(document.getElementById('inputVooRate').value) / 100 / 12;
+
+            // QQQM
+            const qqqmInit = parseFloat(document.getElementById('inputQqqmInit').value);
+            const qqqmMonthly = parseFloat(document.getElementById('inputQqqmMonthly').value);
+            const qqqmInc = parseFloat(document.getElementById('inputQqqmInc').value);
+            const qqqmRate = parseFloat(document.getElementById('inputQqqmRate').value) / 100 / 12;
+
+            // VTI
+            const vtiInit = parseFloat(document.getElementById('inputVtiInit').value);
+            const vtiRate = parseFloat(document.getElementById('inputVtiRate').value) / 100 / 12;
+
+            let curVoo = vooInit, curQqqm = qqqmInit, curVti = vtiInit;
+            let prinTotal = vooInit + qqqmInit + vtiInit;
+            
+            const months = (targetYear - startYear) * 12;
+            const data = [];
+
+            // 시작 데이터
+            data.push({
+                year: startYear,
+                voo: curVoo, qqqm: curQqqm, vti: curVti,
+                total: curVoo + curQqqm + curVti
+            });
+
+            for (let m = 1; m <= months; m++) {
+                const yearIdx = Math.floor((m - 1) / 12);
+                
+                // 월 적립금 (매년 증액)
+                const cVoo = vooMonthly + (yearIdx * vooInc);
+                const cQqqm = qqqmMonthly + (yearIdx * qqqmInc);
+
+                // 이자 + 불입
+                curVoo = curVoo * (1 + vooRate) + cVoo;
+                curQqqm = curQqqm * (1 + qqqmRate) + cQqqm;
+                curVti = curVti * (1 + vtiRate); // 불입 없음
+
+                prinTotal += cVoo + cQqqm;
+
+                // 매년 12월 데이터 저장
+                if (m % 12 === 0) {
+                    data.push({
+                        year: startYear + yearIdx + 1,
+                        voo: curVoo, qqqm: curQqqm, vti: curVti,
+                        total: curVoo + curQqqm + curVti,
+                        principal: prinTotal
+                    });
+                }
+            }
+
+            // UI Update
+            const final = data[data.length - 1];
+            document.getElementById('targetYearBadge').innerText = targetYear + "년";
+            document.getElementById('totalAssetDisplay').innerText = formatMoney(final.total);
+            document.getElementById('totalPrincipalDisplay').innerText = formatMoney(prinTotal);
+            document.getElementById('totalInterestDisplay').innerText = "+" + formatMoney(final.total - prinTotal);
+            
+            document.getElementById('finalVoo').innerText = formatMoney(final.voo);
+            document.getElementById('finalQqqm').innerText = formatMoney(final.qqqm);
+            document.getElementById('finalVti').innerText = formatMoney(final.vti);
+
+            // Chart
+            const chartContainer = document.getElementById('chartArea');
+            chartContainer.innerHTML = '';
+            const maxVal = final.total;
+            data.forEach(d => {
+                const bar = document.createElement('div');
+                bar.className = 'bar';
+                bar.style.height = (d.total / maxVal * 100) + '%';
+                // 시작, 끝, 10년 단위 강조
+                if (d.year === startYear || d.year === targetYear || d.year % 10 === 0) bar.classList.add('active');
+                chartContainer.appendChild(bar);
+            });
+
+            // Table
+            const tbody = document.querySelector('#detailTable tbody');
+            tbody.innerHTML = '';
+            data.forEach(d => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td style="text-align:left; padding-left:15px; font-weight:600">${d.year}</td>
+                    <td style="color:#2563eb;">${formatMoney(d.voo)}</td>
+                    <td style="color:#9333ea;">${formatMoney(d.qqqm)}</td>
+                    <td style="color:#64748b;">${formatMoney(d.vti)}</td>
+                    <td style="padding-right:15px; font-weight:700; color:#1e293b;">${formatMoney(d.total)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function formatMoney(num) {
+            return "$" + Math.round(num).toLocaleString();
+        }
+
+        function switchTab(screenId, btn) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+
+        // 초기 실행
+        runSimulation();
+    </script>
+</body>
+</html>
+
+
