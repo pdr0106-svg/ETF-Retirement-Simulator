@@ -1,0 +1,296 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>ETF 은퇴 시뮬레이터</title>
+    <style>
+        /* --- 스타일 (아이폰 최적화) --- */
+        :root { --safe-bottom: env(safe-area-inset-bottom, 20px); }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            background-color: #f8fafc; margin: 0; 
+            height: 100vh; height: 100dvh; 
+            display: flex; flex-direction: column; overflow: hidden;
+            color: #334155;
+        }
+        
+        /* 헤더 */
+        header { flex-shrink: 0; background: white; padding: max(20px, env(safe-area-inset-top)) 20px 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); z-index: 10; }
+        h1 { font-size: 20px; margin: 0; font-weight: 800; color: #1e293b; }
+        .sub-title { font-size: 12px; color: #64748b; margin-top: 4px; }
+
+        /* 메인 컨텐츠 */
+        main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px; padding-bottom: 20px; }
+
+        /* 탭바 */
+        nav { flex-shrink: 0; background: white; border-top: 1px solid #e2e8f0; padding-bottom: var(--safe-bottom); display: flex; justify-content: space-around; height: 60px; z-index: 50; }
+        .tab-btn { flex: 1; border: none; background: none; font-size: 11px; font-weight: 600; color: #94a3b8; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+        .tab-btn.active { color: #2563eb; }
+        .tab-icon { font-size: 20px; }
+
+        /* 카드 UI */
+        .card { background: white; border-radius: 20px; padding: 20px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+        .hero-card { background: linear-gradient(135deg, #2563eb, #4f46e5); color: white; }
+        .label { font-size: 13px; font-weight: 600; color: #64748b; display: block; margin-bottom: 5px; }
+        .value-lg { font-size: 32px; font-weight: 800; margin: 10px 0; }
+        
+        /* 입력폼 */
+        .input-group { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px; }
+        .input-group:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        .input-label-sub { font-size: 10px; color: #94a3b8; margin-top: 2px; }
+        input[type="number"] { width: 100px; text-align: right; border: none; font-size: 16px; font-weight: 700; color: #1e293b; outline: none; background: transparent; }
+        
+        /* 차트 (CSS 막대 그래프) */
+        .chart-container { height: 200px; display: flex; align-items: flex-end; gap: 2px; padding-top: 20px; }
+        .bar { flex: 1; background: #cbd5e1; border-radius: 2px 2px 0 0; position: relative; transition: height 0.3s; }
+        .bar.active { background: #2563eb; }
+
+        /* 테이블 */
+        .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: -20px; padding: 20px; }
+        table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: right; white-space: nowrap; }
+        th { text-align: right; color: #64748b; font-weight: 600; padding: 10px 8px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; position: sticky; top: 0; z-index: 5; }
+        th:first-child { text-align: left; position: sticky; left: 0; z-index: 6; }
+        td { padding: 12px 8px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+        td:first-child { text-align: left; font-weight: 700; color: #64748b; position: sticky; left: 0; background: white; z-index: 5; border-right: 1px solid #f1f5f9; }
+
+        /* 유틸 */
+        .text-blue { color: #2563eb; }
+        .text-purple { color: #9333ea; }
+        .text-gray { color: #64748b; }
+        .text-green { color: #16a34a; }
+        .screen { display: none; }
+        .screen.active { display: block; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>ETF 포트폴리오</h1>
+        <div class="sub-title">VOO • QQQM • VTI 시뮬레이션</div>
+    </header>
+
+    <main>
+        <!-- 1. 대시보드 화면 -->
+        <div id="dashboard" class="screen active">
+            <div class="card hero-card">
+                <div style="display:flex; justify-content:space-between;">
+                    <span style="opacity:0.8; font-size:12px">예상 총 자산 (연말 기준)</span>
+                    <span style="background:rgba(255,255,255,0.2); padding:2px 8px; border-radius:10px; font-size:11px;" id="targetYearBadge">2057년</span>
+                </div>
+                <div class="value-lg" id="totalAssetDisplay">$0</div>
+                <div style="display:flex; gap:10px; font-size:11px; opacity:0.9; margin-top:15px; border-top:1px solid rgba(255,255,255,0.2); padding-top:10px;">
+                    <div style="flex:1"><div>원금</div><div style="font-weight:700; font-size:14px" id="totalPrincipalDisplay">$0</div></div>
+                    <div style="flex:1"><div>수익</div><div style="font-weight:700; font-size:14px; color:#86efac" id="totalInterestDisplay">+$0</div></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="label">자산 성장 그래프</div>
+                <div class="chart-container" id="chartArea"></div>
+                <div style="text-align:center; font-size:10px; color:#94a3b8; margin-top:10px;">시작 → 목표 연도</div>
+            </div>
+
+            <div class="card">
+                <div class="label">최종 자산 구성</div>
+                <div class="input-group"><span>VOO (Core)</span><span style="font-weight:700; color:#2563eb" id="finalVoo">$0</span></div>
+                <div class="input-group"><span>QQQM (Booster)</span><span style="font-weight:700; color:#9333ea" id="finalQqqm">$0</span></div>
+                <div class="input-group"><span>VTI (Holding)</span><span style="font-weight:700; color:#64748b" id="finalVti">$0</span></div>
+            </div>
+        </div>
+
+        <!-- 2. 상세표 화면 -->
+        <div id="detail" class="screen">
+            <div class="card" style="padding:0; overflow:hidden;">
+                <div class="table-wrapper">
+                    <table id="detailTable">
+                        <thead>
+                            <tr>
+                                <th>연도</th>
+                                <th class="text-blue">VOO</th>
+                                <th class="text-purple">QQQM</th>
+                                <th class="text-gray">VTI</th>
+                                <th>Total</th>
+                                <th class="text-green">수익</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+            <div style="text-align:center; font-size:11px; color:#94a3b8; margin-top:10px;">* 표를 좌우로 밀어서 전체 내역을 확인하세요</div>
+        </div>
+
+        <!-- 3. 설정 화면 -->
+        <div id="settings" class="screen">
+            <div class="card">
+                <div class="label">목표 기간</div>
+                <div class="input-group"><label>시작 연도</label><input type="number" id="inStartYear" value="2026" oninput="runSim()"></div>
+                <div class="input-group"><label>목표 연도</label><input type="number" id="inTargetYear" value="2057" oninput="runSim()"></div>
+            </div>
+
+            <div class="card" style="border-left: 4px solid #2563eb">
+                <div class="label text-blue">🛡️ VOO (Core)</div>
+                <div class="input-group"><label>초기 투자금</label><input type="number" id="inVooInit" value="184.12" oninput="runSim()"></div>
+                <div class="input-group"><label>월 적립금</label><input type="number" id="inVooMon" value="140" oninput="runSim()"></div>
+                <div class="input-group"><label>매년 증액</label><input type="number" id="inVooInc" value="35" oninput="runSim()"></div>
+                <div class="input-group">
+                    <div><label>수익률 (%)</label><div class="input-label-sub">실질 수익률 (7% 권장)</div></div>
+                    <input type="number" id="inVooRate" value="7.0" oninput="runSim()">
+                </div>
+            </div>
+
+            <div class="card" style="border-left: 4px solid #9333ea">
+                <div class="label text-purple">🚀 QQQM (Booster)</div>
+                <div class="input-group"><label>초기 투자금</label><input type="number" id="inQqqmInit" value="0" oninput="runSim()"></div>
+                <div class="input-group"><label>월 적립금</label><input type="number" id="inQqqmMon" value="60" oninput="runSim()"></div>
+                <div class="input-group"><label>매년 증액</label><input type="number" id="inQqqmInc" value="15" oninput="runSim()"></div>
+                <div class="input-group">
+                    <div><label>수익률 (%)</label><div class="input-label-sub">실질 수익률 (9% 권장)</div></div>
+                    <input type="number" id="inQqqmRate" value="9.0" oninput="runSim()">
+                </div>
+            </div>
+
+            <div class="card" style="border-left: 4px solid #64748b">
+                <div class="label text-gray">🔒 VTI (Holding)</div>
+                <div class="input-group"><label>보유 잔액</label><input type="number" id="inVtiInit" value="176.22" oninput="runSim()"></div>
+                <div class="input-group">
+                    <div><label>수익률 (%)</label><div class="input-label-sub">추가 불입 없음</div></div>
+                    <input type="number" id="inVtiRate" value="7.0" oninput="runSim()">
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <nav>
+        <button class="tab-btn active" onclick="switchTab('dashboard', this)">
+            <span class="tab-icon">📊</span>차트
+        </button>
+        <button class="tab-btn" onclick="switchTab('detail', this)">
+            <span class="tab-icon">📝</span>상세표
+        </button>
+        <button class="tab-btn" onclick="switchTab('settings', this)">
+            <span class="tab-icon">⚙️</span>설정
+        </button>
+    </nav>
+
+    <script>
+        function runSim() {
+            // 입력값 파싱
+            const startYear = parseInt(document.getElementById('inStartYear').value);
+            const targetYear = parseInt(document.getElementById('inTargetYear').value);
+
+            // VOO
+            const vooInit = parseFloat(document.getElementById('inVooInit').value);
+            const vooMon = parseFloat(document.getElementById('inVooMon').value);
+            const vooInc = parseFloat(document.getElementById('inVooInc').value);
+            const vooRate = parseFloat(document.getElementById('inVooRate').value) / 100 / 12;
+
+            // QQQM
+            const qqqmInit = parseFloat(document.getElementById('inQqqmInit').value);
+            const qqqmMon = parseFloat(document.getElementById('inQqqmMon').value);
+            const qqqmInc = parseFloat(document.getElementById('inQqqmInc').value);
+            const qqqmRate = parseFloat(document.getElementById('inQqqmRate').value) / 100 / 12;
+
+            // VTI
+            const vtiInit = parseFloat(document.getElementById('inVtiInit').value);
+            const vtiRate = parseFloat(document.getElementById('inVtiRate').value) / 100 / 12;
+
+            let curVoo = vooInit, curQqqm = qqqmInit, curVti = vtiInit;
+            let prinTotal = vooInit + qqqmInit + vtiInit;
+            
+            const months = (targetYear - startYear + 1) * 12; // 목표 연도 포함
+            const data = [];
+
+            // 2026년 1월부터 바로 계산 시작 (초기 상태 테이블 제외)
+            for(let m=1; m<=months; m++) {
+                // 연차 계산 (0년차, 1년차...)
+                const yearIdx = Math.floor((m-1)/12);
+                const curYear = startYear + yearIdx;
+                
+                // 월 적립금 (매년 증액)
+                const cVoo = vooMon + (yearIdx * vooInc);
+                const cQqqm = qqqmMon + (yearIdx * qqqmInc);
+
+                // 이자 + 불입 (월말 기준)
+                curVoo = curVoo * (1+vooRate) + cVoo;
+                curQqqm = curQqqm * (1+qqqmRate) + cQqqm;
+                curVti = curVti * (1+vtiRate); // 불입 없음
+
+                prinTotal += cVoo + cQqqm;
+
+                // 매년 12월마다 데이터 저장
+                if(m%12 === 0) {
+                    data.push({
+                        y: curYear,
+                        v: curVoo, q: curQqqm, t: curVti,
+                        tot: curVoo + curQqqm + curVti,
+                        prin: prinTotal
+                    });
+                }
+                
+                // 목표 연도까지만 계산
+                if (curYear >= targetYear && m%12 === 0) break; 
+            }
+
+            // UI 업데이트
+            const final = data[data.length-1];
+            document.getElementById('targetYearBadge').innerText = targetYear + "년";
+            document.getElementById('totalAssetDisplay').innerText = formatMoney(final.tot);
+            document.getElementById('totalPrincipalDisplay').innerText = formatMoney(final.prin);
+            document.getElementById('totalInterestDisplay').innerText = "+" + formatMoney(final.tot - final.prin);
+            
+            document.getElementById('finalVoo').innerText = formatMoney(final.v);
+            document.getElementById('finalQqqm').innerText = formatMoney(final.q);
+            document.getElementById('finalVti').innerText = formatMoney(final.t);
+
+            // 차트
+            const chartArea = document.getElementById('chartArea');
+            chartArea.innerHTML = '';
+            const maxVal = final.tot;
+            data.forEach(d => {
+                const bar = document.createElement('div');
+                bar.className = 'bar';
+                if(d.y === startYear || d.y === targetYear || d.y % 10 === 0) bar.classList.add('active');
+                bar.style.height = (d.tot / maxVal * 100) + '%';
+                chartArea.appendChild(bar);
+            });
+
+            // 테이블 (수익 표시 추가)
+            const tbody = document.querySelector('#detailTable tbody');
+            tbody.innerHTML = '';
+            data.forEach(d => {
+                const tr = document.createElement('tr');
+                const profit = d.tot - d.prin;
+                tr.innerHTML = `
+                    <td style="text-align:left; padding-left:15px; font-weight:600">${d.y}</td>
+                    <td class="text-blue">${formatMoney(d.v)}</td>
+                    <td class="text-purple">${formatMoney(d.q)}</td>
+                    <td class="text-gray">${formatMoney(d.t)}</td>
+                    <td style="padding-right:15px; font-weight:700; color:#1e293b;">${formatMoney(d.tot)}</td>
+                    <td class="text-green" style="font-size:10px">+${formatMoney(profit)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function formatMoney(n) {
+            return "$" + Math.round(n).toLocaleString();
+        }
+
+        function switchTab(id, btn) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+
+        // 실행
+        runSim();
+    </script>
+</body>
+</html>
+
